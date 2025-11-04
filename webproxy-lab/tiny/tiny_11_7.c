@@ -172,19 +172,15 @@ void serve_static(int fd, char *filename, int filesize) {
   printf("Response headers:\n");
   printf("%s", buf);
 
+  /* 파일을 열고 메모리에 매핑 */
   srcfd = Open(filename, O_RDONLY, 0);
-  /* 파일 크기 만큼 메모리 동적 할당 */
-  srcp = (char *)malloc(filesize);
-  if (srcp == NULL) {
-    Close(srcfd);
-    return ;
-  }
-  rio_readn(srcfd, srcp, filesize);
+  /* 파일 전체를 가상메모리에 올려저 읽기 편하게 만듬. srcp는 파일 내용이 담김 메모리의 시작 주소를 가르킴. */;
+  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
   Close(srcfd);
   /* 파일 내용을 클라이언트로 전달 */
-  rio_writen(fd, srcp, filesize);
-  /* 동적 메모리 할당 해제 */
-  free(srcp);
+  Rio_writen(fd, srcp, filesize);
+  /* 메모리 매핑 해제*/
+  Munmap(srcp, filesize);
 }
 
 void get_filetype(char *filename, char *filetype) {

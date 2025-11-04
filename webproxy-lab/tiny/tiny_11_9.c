@@ -179,6 +179,7 @@ void serve_static(int fd, char *filename, int filesize) {
     Close(srcfd);
     return ;
   }
+  /* 디스크 파일에서 파일 내용 읽어오기. srcp로 파일의 내용을 복사하기.*/
   rio_readn(srcfd, srcp, filesize);
   Close(srcfd);
   /* 파일 내용을 클라이언트로 전달 */
