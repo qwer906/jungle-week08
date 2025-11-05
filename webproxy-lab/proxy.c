@@ -10,12 +10,13 @@ static const char *user_agent_hdr =
     "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
     "Firefox/10.0.3\r\n";
 
-    void doit(int fd);
-    void read_requesthdrs(rio_t *rp);
-    int read_header_until_blank(rio_t *rp, char *raw_header, size_t rawcap, char *host_hdr, size_t hostcap);
-    void parse_uri(char *uri, char *host, char *path, char *port, char *host_hdr);
-    void Rebuild_request(char *host, char *path, char *port, char *raw_header, char *host_hdr, int serverfd);
-    void clienterror(int fd, char *filename, char *errnum, char *shortmsg, char *longmsg);
+void doit(int fd);
+void read_requesthdrs(rio_t *rp);
+int read_header_until_blank(rio_t *rp, char *raw_header, size_t rawcap, char *host_hdr, size_t hostcap);
+void parse_uri(char *uri, char *host, char *path, char *port, char *host_hdr);
+void Rebuild_request(char *host, char *path, char *port, char *raw_header, char *host_hdr, int serverfd);
+void clienterror(int fd, char *filename, char *errnum, char *shortmsg, char *longmsg);
+void *thread(void *vargp);
 
 int main(int argc, char **argv)
 { 
@@ -36,9 +37,12 @@ int main(int argc, char **argv)
     connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
     Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
     printf("Accepted connection from (%s %s)\n", hostname, port);
-    // 클라이언트 요청 처리
-    doit(connfd);
-    Close(connfd);
+    // 쓰레드 힙메모리에 저장해서
+    int *connfdp = malloc(sizeof(int));
+    *connfdp = connfd;
+
+    pthread_t tid;
+    Pthread_create(&tid, NULL, thread, connfdp);
   }
 }
 
@@ -288,7 +292,8 @@ void Rebuild_request(char *host, char *path, char *port, char *raw_header, char 
   // 원본 헤더를 '\r\n'을 기준으로 쪼개기
   // strtok은 원본(raw_header)을 수정하므로 주의해야 하지만,
   // 이 함수가 끝난 뒤 raw_header를 다시 쓰지 않으므로 여기선 괜찮습니다.
-  char *line = strtok(raw_header, "\r\n");
+  char *saveptr = NULL;
+  char *line = strtok_r(raw_header, "\r\n", &saveptr);
   while (line != NULL) {
     // 필수 헤더 4개(및 Accept-Encoding)는 건너뛰고 나머지 헤더만 추가합니다.
     if(strncasecmp(line, "Host:", 5) && 
@@ -302,7 +307,7 @@ void Rebuild_request(char *host, char *path, char *port, char *raw_header, char 
       n += sprintf(buf + n, "%s\r\n", line);
     }
     // 다음 줄로
-    line = strtok(NULL, "\r\n");
+    line = strtok_r(NULL, "\r\n", &saveptr);
   }
   
   // 마지막 빈 줄 추가
@@ -310,4 +315,15 @@ void Rebuild_request(char *host, char *path, char *port, char *raw_header, char 
   
   // 완성된 요청 헤더를 원 서버(tiny)로 전송
   Rio_writen(serverfd, buf, n);
+}
+
+void *thread(void *vargp) {
+  Pthread_detach(pthread_self());
+
+  int connfd = *((int *)vargp);
+  Free(vargp);
+  doit(connfd);
+  Close(connfd);
+
+  return NULL;
 }
